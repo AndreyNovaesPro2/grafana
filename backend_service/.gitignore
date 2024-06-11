@@ -1,0 +1,10 @@
+dist
+node_modules
+ab_results.csv
+ab_results.tsv
+venv
+load_tests_results.csv
+load_tests_results.tsv
+load_tests_results.xlsx
+load_tests_results_2.csv
+report_load_test/report.html

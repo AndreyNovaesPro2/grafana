@@ -1,0 +1,177 @@
+version: '3.9'
+
+services:
+  frontend:
+    build: ./frontend_service
+    restart: unless-stopped
+    container_name: frontend
+    env_file: ./frontend_service/.env
+    ports:
+      - "4444:4444"
+    depends_on:
+      - backend
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  scraper:
+    build: ./scrapper_python_scrapy_pg
+    restart: unless-stopped
+    container_name: scraper
+    depends_on:
+      - postgres
+    networks:
+      - monitoring
+    env_file: ./scrapper_python_scrapy_pg/.env
+    command: ["sh", "-c", "./wait-for-it.sh postgres:5432 --timeout=30 --strict -- python start_spiders.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6800"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  backend:
+    build: ./backend_service
+    restart: unless-stopped
+    container_name: backend
+    env_file: ./backend_service/.env
+    ports:
+      - "3001:3001"
+    networks:
+      - monitoring
+    depends_on:
+      - rabbitmq
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  node_exporter:
+    image: prom/node-exporter:latest
+    container_name: node_exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring
+  
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - monitoring
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring
+
+  loki:
+    image: grafana/loki:latest
+    restart: unless-stopped
+    container_name: loki
+    ports:
+      - "3100:3100"
+    networks:
+      - monitoring
+
+  tempo:
+    image: grafana/tempo:latest
+    restart: unless-stopped
+    container_name: tempo
+    ports:
+      - "3200:3200"
+    networks:
+      - monitoring
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    restart: unless-stopped
+    container_name: cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro  
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - monitoring
+
+  postgres:
+    image: postgres:latest
+    restart: unless-stopped
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: scrapped_data
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  rabbitmq:
+    image: rabbitmq:latest
+    restart: unless-stopped
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:latest
+    restart: unless-stopped
+    container_name: redis
+    command: redis-server --requirepass redisPassword
+    ports:
+      - "6379:6379"
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  grafana-data:
+
+networks:
+  monitoring:
+    driver: bridge
